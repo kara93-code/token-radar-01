@@ -281,7 +281,7 @@
         el('b', { text: 'implied = TVL x M x G x A x B' }),
         '  —  M is the live-market multiple (' + fmtMult(DATA.live_multiple) + ', the median mcap/TVL of ' + DATA.live_multiple_n + ' live-token protocols in this snapshot); G is the growth factor from the 7-day TVL change (clamped ' + m.growth_floor + '% to +' + m.growth_cap + '%, rises weighted ' + m.growth_up_weight + ', falls ' + m.growth_down_weight + '); A is the age factor from days listed with no token on record (0.55 + 0.45 x (1 - exp(-age / ' + m.age_scale_days + '))); B is the breadth factor from chains (1 + 0.03 per extra chain, up to ' + m.breadth_max_chains + ').'
       ),
-      el('p', { class: 'sub', text: 'The watchlist is the floor: every protocol at or above $' + Math.round(DATA.floor_usd / 1e6) + 'M of TVL with no token on record. The early radar ranks every other rankable pre-token protocol below it, so the board holds all ' + DATA.board_size + ' of them — not a top slice. Exchanges and versioned pools are set aside, not ranked.' })
+      el('p', { class: 'sub', text: 'The watchlist is the floor: every protocol at or above $' + Math.round(DATA.floor_usd / 1e6) + 'M of TVL with no token on record. The early radar ranks every other rankable pre-token protocol below it, so the board holds all ' + DATA.board_size + ' of them — not a top slice. Wrapped, staked and bridged products of tokens that already trade are set aside, not ranked, as are exchanges and versioned pools.' })
     );
   }
 
@@ -362,6 +362,15 @@
 
   readHash();
   render();
+  window.addEventListener('hashchange', function () {
+    state.q = '';
+    state.category = 'all';
+    state.chain = 'all';
+    state.watchOnly = false;
+    state.selected = null;
+    readHash();
+    render();
+  });
   window.addEventListener('keydown', function (e) {
     if (e.key === 'Escape' && dialog.open) dialog.close();
   });

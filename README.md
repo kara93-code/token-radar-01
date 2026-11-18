@@ -21,6 +21,9 @@ for each one.
 
 No protocol name is ever special-cased. Live-token protocols are set
 aside with their market caps — the market's own numbers, never a model's.
+Wrapped, staked and bridged products of tokens that already trade are
+set aside too, as are exchanges and versioned pools: WBTC is Bitcoin on
+Ethereum, not a protocol waiting on a launch of its own.
 
 ## Honest language
 

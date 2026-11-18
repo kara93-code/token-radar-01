@@ -22,8 +22,9 @@
 //      more chains has a wider surface to farm and to launch from.
 //
 // The board ranks every rankable pre-token protocol: the 40 watchlist
-// slugs plus every other pre-token protocol below the floor that is not a
-// CEX and not a versioned pool. Live-token protocols are set aside with
+// slugs plus every other pre-token protocol below the floor that is not
+// a wrapped, staked or bridged product of a token that already trades,
+// not an exchange, and not a versioned pool. Live-token protocols are set
 // their market caps and mcap/TVL ratios — the market's own numbers, never
 // a model's — so the reader can see what the multiple M is measured from.
 
