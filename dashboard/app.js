@@ -1,4 +1,4 @@
-// Launch Radar's dashboard — radar-4. It reads window.__RADAR__ (written
+// ORION Radar's dashboard — radar-5. It reads window.__RADAR__ (written
 // beside dashboard/ by main.ts) and renders the ranked board, a filterable
 // table, a per-protocol detail view with the model's own factors and the
 // protocol's farm plan, the live-token protocols the multiple is fitted
@@ -97,7 +97,7 @@
 
   function masthead() {
     return '<header class="masthead">' +
-      '<div class="brand">Launch Radar<span class="dot">.</span></div>' +
+      '<div class="brand">ORION RADAR<span class="dot">.</span></div>' +
       '<div class="meta"><span>Snapshot ' + esc(DATA.as_of) + '</span><span>DefiLlama protocol index</span><span>Model <b>' + esc(DATA.model_version) + '</b></span></div>' +
       '</header>';
   }
@@ -114,7 +114,7 @@
     }).join('');
     return '<section class="hero">' +
       '<h1>Which pre-token protocol is worth farming next?</h1>' +
-      '<p class="lede"><b>' + DATA.watchlist_size + ' watchlist protocols</b> — the snapshot&rsquo;s own watchlist of pre-token protocols — ranked by implied value, plus <b>' + DATA.early_size + ' early ones</b> the radar found beyond the watchlist. Each protocol is priced with its own category&rsquo;s market multiple, measured from the live-token protocols in this same snapshot, then multiplied by its fitted odds of ever recording a token. Implied value is a model, not a promise, and &ldquo;no token on record&rdquo; is what the data says, never proof a token does not exist.</p>' +
+      '<p class="lede"><b>' + DATA.watchlist_size + ' watchlist protocols</b> — the snapshot&rsquo;s own watchlist of pre-token protocols — ranked by implied value, plus <b>' + DATA.early_size + ' early ones</b> the radar found beyond the watchlist. Each protocol is priced with its own category&rsquo;s market multiple — a 15% trimmed mean, measured from the live-token protocols in this same snapshot — then multiplied by its fitted odds of ever recording a token. Implied value is a model, not a promise, and &ldquo;no token on record&rdquo; is what the data says, never proof a token does not exist.</p>' +
       '<div class="chips">' + cats + '</div>' +
       '<div class="statgrid">' +
       '<div class="stat"><span>Held-out miss, model</span><b>' + (winner ? fmtMult(winner.loo_miss) : 'n/a') + '</b></div>' +
@@ -223,7 +223,7 @@
       '<section class="card"><h2>How implied value is computed</h2>' +
       '<p class="sub">One function scores every row, from the snapshot figures alone. No protocol name is special-cased, and no row is hand-picked.</p>' +
       '<div class="formula"><b>implied = TVL &times; exp(pred) &times; odds</b><br>' +
-      'pred is the log of the mcap-per-TVL a protocol like this one would carry: the median log ratio of its category — shrunk toward the global ' + fmtMult(DATA.live_multiple) + ' when the category holds fewer than ' + m.shrink_min_n + ' live protocols, so a one-protocol category can never set a wild price — plus a fitted size slope of ' + DATA.size_slope + ' on log TVL (big protocols carry a smaller multiple; TVL exponent ' + DATA.tvl_exponent + '). The conditional value is TVL &times; exp(pred): what the token would be worth <i>if</i> it launches. The odds are the fitted chance it ever does, from the peers&rsquo; record: the longer a protocol runs with no token on record, the less likely it ever records one.</div>' +
+      'pred is the log of the mcap-per-TVL a protocol like this one would carry: the 15% trimmed mean of the log ratios of its category — shrunk toward the global ' + fmtMult(DATA.live_multiple) + ' when the category holds fewer than ' + m.shrink_min_n + ' live protocols, so a one-protocol category can never set a wild price — plus a fitted size slope of ' + DATA.size_slope + ' on log TVL (big protocols carry a smaller multiple; TVL exponent ' + DATA.tvl_exponent + '). The conditional value is TVL &times; exp(pred): what the token would be worth <i>if</i> it launches. The odds are the fitted chance it ever does, from the peers&rsquo; record: the longer a protocol runs with no token on record, the less likely it ever records one.</div>' +
       '<p class="sub">The watchlist is the snapshot&rsquo;s own list of ' + DATA.watchlist_size + ' pre-token protocols. The early radar ranks every other rankable pre-token protocol in the snapshot, so the board holds all ' + DATA.board_size + ' of them — not a top slice. Wrapped, staked and bridged products of tokens that already trade are set aside, not ranked, as are exchanges and versioned pools.</p>' +
       '<p class="sub">The verdict is costed on one $' + m.ticket_usd + ' ticket, the same for every row: the expected slice is the implied value times the airdrop pool&rsquo;s ' + Math.round(m.airdrop_share * 100) + '% share times the ticket&rsquo;s share of TVL; gas is the plan&rsquo;s own transactions on the protocol&rsquo;s chain; time is the plan&rsquo;s own minutes at $' + m.wage_usd_per_hour + ' an hour. FARM clears the gas by $' + m.verdict_farm_net + '; MARGINAL sits within $' + Math.abs(m.verdict_skip_net) + '; the rest is SKIP.</p></section>' +
       '<section class="card"><h2>Multiples by category</h2>' +
@@ -244,18 +244,24 @@
       return '<li><span>' + esc(g.label) + '</span><b class="num">' + g.count + '</b><small>' + esc(g.why) + '</small></li>';
     }).join('');
     var total = (DATA.accounting || []).reduce(function (a, g) { return a + g.count; }, 0);
+    var integrity = (DATA.integrity || []).map(function (g) {
+      return '<li><span>' + esc(g.check) + '</span><b class="num">' + g.count + '</b><small>' + esc(g.note) + '</small></li>';
+    }).join('');
     return '<div class="twocol">' +
       '<section class="card"><h2>Out-of-sample evidence</h2>' +
       '<p class="sub">Leave-one-out: each live-token protocol is priced from the other 127, and the miss is the median absolute error. Walk-forward: older protocols price the newer half, and back.</p>' +
       '<div class="table-wrap"><table><thead><tr><th scope="col">Term</th><th scope="col">Held-out miss</th><th scope="col">Call</th><th scope="col">Why</th></tr></thead><tbody>' + testRows + '</tbody></table></div>' +
       '<p class="sub" style="margin-top:10px">Walk-forward, older &rarr; newer: model ' + fmtMult(DATA.walk_forward_old_new) + ' vs flat ' + fmtMult(DATA.walk_forward_flat_old_new) + '. Newer &rarr; older: model ' + fmtMult(DATA.walk_forward_new_old) + ' vs flat ' + fmtMult(DATA.walk_forward_flat_new_old) + '. The model wins both ways.</p>' +
-      '<p class="sub">The printed range is the model&rsquo;s own held-out spread: implied &times; [' + fmtMult(DATA.range_low_mult) + ', ' + fmtMult(DATA.range_high_mult) + ']. ' + Math.round(DATA.range_coverage_p25_p75 * 100) + '% of held-out tokens land inside it; ' + Math.round(DATA.range_coverage_p10_p90 * 100) + '% inside the wider 10th–90th spread.</p></section>' +
+      '<p class="sub">The printed range is the model&rsquo;s own held-out spread: implied &times; [' + fmtMult(DATA.range_low_mult) + ', ' + fmtMult(DATA.range_high_mult) + ']. ' + Math.round(DATA.range_coverage_p25_p75 * 100) + '% of held-out tokens land inside it; ' + Math.round(DATA.range_coverage_p10_p90 * 100) + '% inside the wider 10th–90th spread, implied &times; [' + fmtMult(DATA.range_low10_mult) + ', ' + fmtMult(DATA.range_high90_mult) + ']. A range that wide is the honest answer: most of a token&rsquo;s value is idiosyncratic, and the board says so instead of pretending a point estimate is precise.</p></section>' +
       '<section class="card"><h2>Token odds, fitted from the peers</h2>' +
       '<p class="sub">A share pi = ' + odds.pi + ' of protocols ever record a token, at a rate lambda = ' + odds.lambda_per_year + ' a year — fitted by least squares to the five age bands. The fit underfits the youngest band (observed ' + ((odds.bands || [])[0] ? fmtOdds(odds.bands[0].observed) : 'n/a') + ' vs fitted ' + ((odds.bands || [])[0] ? fmtOdds(odds.bands[0].fitted) : 'n/a') + '), so young protocols&rsquo; odds are a touch low. A protocol with no listing date takes the base rate, ' + fmtOdds(odds.base_rate) + ', and the detail view says so.</p>' +
       '<div class="table-wrap"><table><thead><tr><th scope="col">Age band</th><th scope="col">n</th><th scope="col">Observed</th><th scope="col">Fitted</th><th scope="col">Mean age</th></tr></thead><tbody>' + bandRows + '</tbody></table></div>' +
       '<h3 style="margin-top:14px">Accounting: every protocol in one group</h3>' +
       '<ul class="ledger">' + ledger + '</ul>' +
-      '<p class="sub">Total ' + total + ' protocols in the snapshot. The ledger is the integrity check: the groups add up to the whole field, so nothing is silently dropped.</p></section>' +
+      '<p class="sub">Total ' + total + ' protocols in the snapshot. The ledger is the integrity check: the groups add up to the whole field, so nothing is silently dropped.</p>' +
+      '<h3 style="margin-top:14px">Integrity strip: what is missing in the snapshot itself</h3>' +
+      '<ul class="ledger">' + integrity + '</ul>' +
+      '<p class="sub">Counted, not hidden: a missing date or change never changes a price silently.</p></section>' +
       '</div>';
   }
 

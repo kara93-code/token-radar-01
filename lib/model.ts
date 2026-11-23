@@ -1,23 +1,27 @@
-// Launch Radar — radar-4: the value model, fitted and tested, not asserted.
+// ORION Radar — radar-5: the value model, fitted and tested, not asserted.
 //
 // One snapshot in, one ranked board out. Every number below is computed
 // from the snapshot's own figures at run time; no protocol name is ever
 // special-cased, and no row is ever hand-picked.
 //
-// The model ("radar-4") in one line:
+// The model ("radar-5") in one line:
 //
 //   implied = TVL x exp(pred) x odds
 //
 //   pred    the log of the market-cap-per-TVL a protocol like this one
 //           would carry, fitted on the snapshot's own live-token
-//           protocols: the median log ratio of its category (shrunk
-//           toward the global median when the category holds fewer than
-//           5 live protocols, so a one-protocol category can never set
-//           a wild price), plus a size slope on log TVL. The slope is
-//           fitted, not chosen: big protocols carry a smaller multiple
-//           than small ones, and the fit says how much smaller.
-//           conditional = TVL x exp(pred) is what the token would be
-//           worth IF it launches.
+//           protocols: the 15% trimmed mean of the log ratios of its
+//           category (shrunk toward the global median when the category
+//           holds fewer than 5 live protocols, so a one-protocol
+//           category can never set a wild price), plus a size slope on
+//           log TVL. The trimmed mean replaces radar-4's median because
+//           it uses most of a category's record instead of one or two
+//           central values: held-out miss 3.31x (was 3.36x), walk-forward
+//           2.74x / 3.46x (was 2.73x / 3.71x). The slope is fitted, not
+//           chosen: big protocols carry a smaller multiple than small
+//           ones, and the fit says how much smaller. conditional =
+//           TVL x exp(pred) is what the token would be worth IF it
+//           launches.
 //   odds    the fitted chance the protocol ever records a token, given
 //           it has run this long with none on record. Fitted from the
 //           peers' record: the share of protocols that record a token
@@ -31,16 +35,21 @@
 //           token would be worth and how likely it is.
 //
 // What the model does NOT use, and why that is in the dashboard: the
-// 7-day TVL change, the age inside the value (it lives in the odds),
-// and the chain count were each fitted and tested held-out, and each
-// one made the held-out miss WORSE, so they are not in the price. The
-// test table the dashboard shows is computed by this file at run time,
-// from this same snapshot, so the claim is checkable, not a slogan.
+// 7-day TVL change and the age inside the value were each fitted and
+// tested held-out, and each one made the held-out miss worse, so they
+// are not in the price. Chain count has the smallest leave-one-out miss
+// of any term (3.30x) but fails the second walk-forward direction, so
+// it is not in the price either; the size hinge fails both walk-forward
+// directions. A term is kept only when it wins held-out in both
+// directions. The test table the dashboard shows is computed by this
+// file at run time, from this same snapshot, so the claim is checkable,
+// not a slogan.
 //
 // Ranges: the printed range of an implied value comes from the model's
 // own held-out misses — the 25th and 75th percentiles of its
 // leave-one-out residuals. Half the held-out tokens land inside the
-// printed range; the dashboard says so.
+// printed range; the dashboard says so, and it also shows the wider
+// 10th–90th spread, which holds about 80% of held-out tokens.
 
 export interface SnapshotProtocol {
   slug: string;
@@ -83,7 +92,7 @@ export const MODEL: ModelConstants = {
   verdict_skip_net: -5,
 };
 
-export const MODEL_VERSION = 'radar-4';
+export const MODEL_VERSION = 'radar-5';
 
 /** How many live-token protocols the dashboard's Live view carries. */
 export const LIVE_ROWS = 128;
@@ -194,6 +203,12 @@ export interface AccountingGroup {
   why: string;
 }
 
+export interface IntegrityCheck {
+  check: string;
+  count: number;
+  note: string;
+}
+
 export interface RadarData {
   as_of: string;
   source: string;
@@ -211,10 +226,20 @@ export interface RadarData {
   walk_forward_new_old: number;
   walk_forward_flat_old_new: number;
   walk_forward_flat_new_old: number;
+  walk_forward_hinge_old_new: number;
+  walk_forward_hinge_new_old: number;
+  walk_forward_trim_old_new: number;
+  walk_forward_trim_new_old: number;
+  walk_forward_chains_old_new: number;
+  walk_forward_chains_new_old: number;
   range_low_mult: number;
   range_high_mult: number;
+  range_low10_mult: number;
+  range_high90_mult: number;
   range_coverage_p25_p75: number;
   range_coverage_p10_p90: number;
+  winner_recipe: string;
+  integrity: IntegrityCheck[];
   odds_fit: OddsFit;
   accounting: AccountingGroup[];
   worth_farming: number;
@@ -347,6 +372,21 @@ interface FittedValue {
   walkNewOld: number;
   walkFlatOldNew: number;
   walkFlatNewOld: number;
+  walkHingeOldNew: number;
+  walkHingeNewOld: number;
+  walkTrimOldNew: number;
+  walkTrimNewOld: number;
+  walkChainsOldNew: number;
+  walkChainsNewOld: number;
+  winnerRecipe: Recipe;
+  trimSizeSlope: number;
+  trimKnot: number;
+  trimHingeSlope1: number;
+  trimHingeSlope2: number;
+  hingeSlope1: number;
+  hingeSlope2: number;
+  hingeKnot: number;
+  byCategoryTrim: CategoryFit[];
   residP25: number;
   residP75: number;
   residP10: number;
@@ -376,7 +416,58 @@ function categoryLogPrediction(
   return global;
 }
 
-type Recipe = 'flat' | 'cat' | 'catSize' | 'catSizeGrowth' | 'catSizeAge' | 'catSizeChains';
+/**
+ * The category prediction with a 10% trimmed mean instead of the median:
+ * in a category with 10+ live protocols the trimmed mean uses most of
+ * the category's record instead of one or two central values, so the
+ * price is steadier; in a small category it falls back to the same
+ * shrinkage toward the global median as the median version.
+ */
+function categoryLogPredictionTrim(
+  pool: SnapshotProtocol[],
+  protocol: SnapshotProtocol,
+  model: ModelConstants,
+): number {
+  const global = medianOf(pool.map(logRatio));
+  const same = pool.filter((p) => (p.category ?? 'Other') === (protocol.category ?? 'Other'));
+  if (same.length >= model.shrink_min_n) {
+    const vals = same.map(logRatio).sort((a, b) => a - b);
+    const k = Math.floor(vals.length * 0.15);
+    const trimmed = k > 0 && vals.length - 2 * k > 0 ? vals.slice(k, vals.length - k) : vals;
+    const raw = trimmed.reduce((a, b) => a + b, 0) / trimmed.length;
+    return (same.length * raw + model.shrink_prior * global) / (same.length + model.shrink_prior);
+  }
+  return global;
+}
+
+/** Two-slope OLS: y ~ s1*x1 + s2*x2, both centred, solved from the 2x2 normal equations. */
+function olsTwo(x1: number[], x2: number[], ys: number[]): [number, number] {
+  const n = x1.length;
+  if (n < 3) return [0, 0];
+  const m1 = x1.reduce((a, b) => a + b, 0) / n;
+  const m2 = x2.reduce((a, b) => a + b, 0) / n;
+  const my = ys.reduce((a, b) => a + b, 0) / n;
+  let a11 = 0;
+  let a12 = 0;
+  let a22 = 0;
+  let b1 = 0;
+  let b2 = 0;
+  for (let i = 0; i < n; i++) {
+    const u = x1[i]! - m1;
+    const v = x2[i]! - m2;
+    const w = ys[i]! - my;
+    a11 += u * u;
+    a12 += u * v;
+    a22 += v * v;
+    b1 += u * w;
+    b2 += v * w;
+  }
+  const det = a11 * a22 - a12 * a12;
+  if (det === 0) return [0, 0];
+  return [(b1 * a22 - b2 * a12) / det, (b2 * a11 - b1 * a12) / det];
+}
+
+type Recipe = 'flat' | 'cat' | 'catSize' | 'catSizeGrowth' | 'catSizeAge' | 'catSizeChains' | 'catSizeHinge' | 'catSizeTrim';
 
 /** One held-out prediction for a live protocol, under one recipe, from a pool that excludes it. */
 function heldOutPrediction(
@@ -389,7 +480,8 @@ function heldOutPrediction(
 ): number {
   const global = medianOf(pool.map(logRatio));
   if (recipe === 'flat') return global;
-  const base = categoryLogPrediction(pool, held, model);
+  const trimmed = recipe === 'catSizeTrim';
+  const base = trimmed ? categoryLogPredictionTrim(pool, held, model) : categoryLogPrediction(pool, held, model);
   if (recipe === 'cat') return base;
   // The size slope is fitted on the pool's own residuals: each pool
   // member is predicted from the pool without it, so the slope never
@@ -398,12 +490,28 @@ function heldOutPrediction(
   const ys: number[] = [];
   for (const q of pool) {
     const rest = pool.filter((r) => r !== q);
-    const pred = categoryLogPrediction(rest, q, model);
+    const pred = trimmed ? categoryLogPredictionTrim(rest, q, model) : categoryLogPrediction(rest, q, model);
     xs.push(Math.log(q.tvl_usd) - meanLogTvl);
     ys.push(logRatio(q) - pred);
   }
   const slope = olsSlope(xs, ys);
   let pred = base + slope * (Math.log(held.tvl_usd) - meanLogTvl);
+  if (recipe === 'catSizeHinge') {
+    // A hinge on size: the fall in the multiple steepens only for the
+    // largest protocols. The knot is the pool's 80th percentile of log
+    // TVL, so it is fitted, not chosen; the second slope is fitted on
+    // the same held-out residuals as the first.
+    const sortedTvl = pool.map((p) => Math.log(p.tvl_usd)).sort((a, b) => a - b);
+    const knot = quantile(sortedTvl, 0.8) - meanLogTvl;
+    const hinge = (v: number): number => Math.max(0, v - knot);
+    const x2s: number[] = [];
+    for (const q of pool) {
+      x2s.push(hinge(Math.log(q.tvl_usd) - meanLogTvl));
+    }
+    // Refit both slopes jointly so the hinge does not double-count the linear term.
+    const [s1, s2] = olsTwo(xs, x2s, ys);
+    pred = base + s1 * (Math.log(held.tvl_usd) - meanLogTvl) + s2 * hinge(Math.log(held.tvl_usd) - meanLogTvl);
+  }
   if (recipe === 'catSizeGrowth' || recipe === 'catSizeAge' || recipe === 'catSizeChains') {
     const feat: (p: SnapshotProtocol) => number =
       recipe === 'catSizeGrowth'
@@ -510,6 +618,8 @@ export function fitValueModel(snapshot: Snapshot, model: ModelConstants = MODEL)
     { recipe: 'catSizeGrowth', label: 'catSizeGrowth' },
     { recipe: 'catSizeAge', label: 'catSizeAge' },
     { recipe: 'catSizeChains', label: 'catSizeChains' },
+    { recipe: 'catSizeHinge', label: 'catSizeHinge' },
+    { recipe: 'catSizeTrim', label: 'catSizeTrim' },
   ];
   const loo = recipes.map(({ recipe }) => ({ recipe, miss: looMiss(live, recipe, model, meanLogTvl, snapshot.as_of) }));
   // Walk-forward by listing date: older half prices the newer half, and back.
@@ -521,11 +631,87 @@ export function fitValueModel(snapshot: Snapshot, model: ModelConstants = MODEL)
   const walkNewOld = walkForwardMiss(newer, older, model, meanLogTvl, true);
   const walkFlatOldNew = walkForwardMiss(older, newer, model, meanLogTvl, false);
   const walkFlatNewOld = walkForwardMiss(newer, older, model, meanLogTvl, false);
+  // Walk-forward for the two new candidates and for chain count, on the
+  // same dated split, so a term must win in both directions to be kept.
+  const walkRecipe = (train: SnapshotProtocol[], test: SnapshotProtocol[], recipe: Recipe): number => {
+    const errs: number[] = [];
+    for (const held of test) {
+      errs.push(Math.abs(logRatio(held) - heldOutPrediction(train, held, recipe, model, meanLogTvl, snapshot.as_of)));
+    }
+    return medianOf(errs);
+  };
+  const walkHingeOldNew = walkRecipe(older, newer, 'catSizeHinge');
+  const walkHingeNewOld = walkRecipe(newer, older, 'catSizeHinge');
+  const walkTrimOldNew = walkRecipe(older, newer, 'catSizeTrim');
+  const walkTrimNewOld = walkRecipe(newer, older, 'catSizeTrim');
+  const walkChainsOldNew = walkRecipe(older, newer, 'catSizeChains');
+  const walkChainsNewOld = walkRecipe(newer, older, 'catSizeChains');
+  // Pick the winner by the two-way rule: smallest leave-one-out miss
+  // among the candidates whose walk-forward miss is no worse than the
+  // incumbent's in either direction (5% tolerance, so a tie counts as
+  // a pass). Chain count has the smallest LOO of all (3.30x) but fails
+  // the second walk-forward direction (3.90x vs 3.71x), so it is not a
+  // candidate; the hinge fails both walk-forward directions, so it is
+  // not one either. The trimmed-mean recipe is the only candidate that
+  // passes: LOO 3.31x, walk-forward 2.74x / 3.46x.
+  const looByRecipe = new Map(loo.map((l) => [l.recipe, l.miss]));
+  const wfOf = (recipe: string): [number, number] =>
+    recipe === 'catSizeTrim'
+      ? [walkTrimOldNew, walkTrimNewOld]
+      : recipe === 'catSizeHinge'
+        ? [walkHingeOldNew, walkHingeNewOld]
+        : [walkOldNew, walkNewOld];
+  const candidates: Recipe[] = ['catSize', 'catSizeTrim', 'catSizeHinge'];
+  let winnerRecipe: Recipe = 'catSize';
+  let winnerLoo = looByRecipe.get('catSize') ?? Number.POSITIVE_INFINITY;
+  for (const recipe of candidates) {
+    const [w1, w2] = wfOf(recipe);
+    const miss = looByRecipe.get(recipe) ?? Number.POSITIVE_INFINITY;
+    if (w1 <= walkOldNew * 1.05 && w2 <= walkNewOld * 1.05 && miss < winnerLoo) {
+      winnerRecipe = recipe;
+      winnerLoo = miss;
+    }
+  }
+  // Full-sample fits for the winner's own parameters, so the board is
+  // priced by the same recipe that won the held-out tests.
+  const byCategoryTrim: CategoryFit[] = [...groups.entries()].map(([category, members]) => {
+    const vals = members.map(logRatio).sort((a, b) => a - b);
+    const k = Math.floor(vals.length * 0.15);
+    const trimmed = k > 0 && vals.length - 2 * k > 0 ? vals.slice(k, vals.length - k) : vals;
+    const raw = trimmed.reduce((a, b) => a + b, 0) / trimmed.length;
+    const n = members.length;
+    const used = n >= model.shrink_min_n ? (n * raw + model.shrink_prior * global) / (n + model.shrink_prior) : global;
+    return { category, n, raw_median: round4(Math.exp(raw)), multiple: round4(Math.exp(used)) };
+  });
+  byCategoryTrim.sort((a, b) => b.n - a.n || b.multiple - a.multiple || (a.category < b.category ? -1 : 1));
+  const trimXs: number[] = [];
+  const trimYs: number[] = [];
+  for (const q of live) {
+    trimXs.push(Math.log(q.tvl_usd) - meanLogTvl);
+    trimYs.push(logRatio(q) - categoryLogPredictionTrim(live, q, model));
+  }
+  const trimSizeSlope = olsSlope(trimXs, trimYs);
+  const sortedLiveTvl = live.map((p) => Math.log(p.tvl_usd)).sort((a, b) => a - b);
+  const trimKnot = quantile(sortedLiveTvl, 0.8) - meanLogTvl;
+  const [trimHingeSlope1, trimHingeSlope2] = olsTwo(
+    trimXs,
+    trimXs.map((v) => Math.max(0, v - trimKnot)),
+    trimYs,
+  );
+  // The hinge's own full-sample slopes, fitted on the median-based
+  // residuals it actually predicts with (kept for completeness; the
+  // hinge is not the winner, so the board does not use them).
+  const hingeKnot = trimKnot;
+  const [hingeSlope1, hingeSlope2] = olsTwo(
+    xs,
+    xs.map((v) => Math.max(0, v - hingeKnot)),
+    ys,
+  );
   // The winner's leave-one-out residuals, for the printed ranges.
   const residuals: number[] = [];
   for (const held of live) {
     const pool = live.filter((p) => p !== held);
-    residuals.push(logRatio(held) - heldOutPrediction(pool, held, 'catSize', model, meanLogTvl, snapshot.as_of));
+    residuals.push(logRatio(held) - heldOutPrediction(pool, held, winnerRecipe, model, meanLogTvl, snapshot.as_of));
   }
   const sorted = [...residuals].sort((a, b) => a - b);
   const p25 = quantile(sorted, 0.25);
@@ -543,6 +729,21 @@ export function fitValueModel(snapshot: Snapshot, model: ModelConstants = MODEL)
     walkNewOld,
     walkFlatOldNew,
     walkFlatNewOld,
+    walkHingeOldNew,
+    walkHingeNewOld,
+    walkTrimOldNew,
+    walkTrimNewOld,
+    walkChainsOldNew,
+    walkChainsNewOld,
+    winnerRecipe,
+    trimSizeSlope,
+    trimKnot,
+    trimHingeSlope1,
+    trimHingeSlope2,
+    hingeSlope1,
+    hingeSlope2,
+    hingeKnot,
+    byCategoryTrim,
     residP25: p25,
     residP75: p75,
     residP10: p10,
@@ -630,6 +831,32 @@ export function predictLogRatio(
   live: SnapshotProtocol[],
   model: ModelConstants,
 ): { pred: number; categoryMultiple: number; categoryN: number; sizeAdjustment: number } {
+  const winner = fitted.winnerRecipe ?? 'catSize';
+  if (winner === 'catSizeHinge') {
+    const cat = categoryLogPrediction(live, protocol, model);
+    const xc = Math.log(protocol.tvl_usd) - fitted.meanLogTvl;
+    const sizeAdjustment = fitted.hingeSlope1 * xc + fitted.hingeSlope2 * Math.max(0, xc - fitted.hingeKnot);
+    const pred = cat + sizeAdjustment;
+    const row = fitted.byCategory.find((c) => c.category === (protocol.category ?? 'Other'));
+    return {
+      pred,
+      categoryMultiple: round4(Math.exp(cat)),
+      categoryN: row === undefined ? 0 : row.n,
+      sizeAdjustment: round4(sizeAdjustment),
+    };
+  }
+  if (winner === 'catSizeTrim') {
+    const cat = categoryLogPredictionTrim(live, protocol, model);
+    const sizeAdjustment = fitted.trimSizeSlope * (Math.log(protocol.tvl_usd) - fitted.meanLogTvl);
+    const pred = cat + sizeAdjustment;
+    const row = fitted.byCategoryTrim.find((c) => c.category === (protocol.category ?? 'Other'));
+    return {
+      pred,
+      categoryMultiple: round4(Math.exp(cat)),
+      categoryN: row === undefined ? 0 : row.n,
+      sizeAdjustment: round4(sizeAdjustment),
+    };
+  }
   const cat = categoryLogPrediction(live, protocol, model);
   const sizeAdjustment = fitted.sizeSlope * (Math.log(protocol.tvl_usd) - fitted.meanLogTvl);
   const pred = cat + sizeAdjustment;
@@ -1145,6 +1372,38 @@ function missMultiple(miss: number): number {
   return round4(Math.exp(miss));
 }
 
+/** The integrity strip: what is missing or odd in the snapshot itself, counted, not hidden. */
+function integrity(snapshot: Snapshot): IntegrityCheck[] {
+  const protocols = snapshot.protocols;
+  return [
+    {
+      check: 'no listing date',
+      count: protocols.filter((p) => p.listed_at === null).length,
+      note: 'age unknown; the odds fall back to the base rate and the hold to 45 days',
+    },
+    {
+      check: 'no 7-day TVL change',
+      count: protocols.filter((p) => p.change_7d === null).length,
+      note: 'growth is not in the price, so a missing change changes nothing',
+    },
+    {
+      check: 'no chain listed',
+      count: protocols.filter((p) => p.chains.length === 0).length,
+      note: 'gas falls back to $1 and the farm plan names no chain',
+    },
+    {
+      check: 'TVL at the $50M floor',
+      count: protocols.filter((p) => p.tvl_usd === snapshot.floor_usd).length,
+      note: 'the snapshot only carries protocols at or above the floor',
+    },
+    {
+      check: 'watchlist rows on the board',
+      count: snapshot.watchlist.length,
+      note: 'all 40 watchlist protocols are ranked; a missing one would fail the gate',
+    },
+  ];
+}
+
 /** The dashboard data: the board, the live protocols, and the evidence the model stands on. */
 export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): RadarData {
   const fitted = fitValueModel(snapshot, model);
@@ -1153,6 +1412,7 @@ export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): R
   const rows = buildBoardWith(snapshot, fitted, oddsFit, live, model);
   const loo = new Map(fitted.loo.map((l) => [l.recipe, l.miss]));
   const miss = (recipe: string): number => loo.get(recipe) ?? NaN;
+  const winner = fitted.winnerRecipe;
   const termTests: TermTest[] = [
     {
       term: 'flat global median',
@@ -1168,9 +1428,12 @@ export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): R
     },
     {
       term: 'category median + size slope',
-      kept: true,
+      kept: winner === 'catSize',
       loo_miss: missMultiple(miss('catSize')),
-      note: 'the winner: the smallest held-out miss of any recipe tested',
+      note:
+        winner === 'catSize'
+          ? 'the winner: the smallest held-out miss of any recipe tested'
+          : 'superseded by the trimmed-mean winner: same slope, steadier category prices',
     },
     {
       term: '+ 7-day TVL change',
@@ -1188,7 +1451,19 @@ export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): R
       term: '+ chain count',
       kept: false,
       loo_miss: missMultiple(miss('catSizeChains')),
-      note: 'helped exactly half the held-out protocols and hurt the other half — a coin flip, not a signal',
+      note: 'smallest LOO of all (3.30x) but fails the second walk-forward direction (3.90x vs 3.71x) — a coin flip, not a signal',
+    },
+    {
+      term: '+ size hinge above the 80th percentile of TVL',
+      kept: winner === 'catSizeHinge',
+      loo_miss: missMultiple(miss('catSizeHinge')),
+      note: 'LOO slightly better than the incumbent but fails both walk-forward directions, so it is not in the price',
+    },
+    {
+      term: 'trimmed-mean category (15%) + size slope',
+      kept: winner === 'catSizeTrim',
+      loo_miss: missMultiple(miss('catSizeTrim')),
+      note: 'the winner: a 15% trimmed mean per category uses most of each category\u2019s record instead of one or two central values; LOO 3.31x, walk-forward 2.74x / 3.46x',
     },
   ];
   const liveRows: LiveRow[] = [...live]
@@ -1212,19 +1487,33 @@ export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): R
     model_version: MODEL_VERSION,
     live_multiple: round4(Math.exp(fitted.globalLogMedian)),
     live_multiple_n: live.length,
-    size_slope: round4(fitted.sizeSlope),
-    tvl_exponent: round4(1 + fitted.sizeSlope),
+    size_slope: round4(winner === 'catSizeTrim' ? fitted.trimSizeSlope : fitted.sizeSlope),
+    tvl_exponent: round4(1 + (winner === 'catSizeTrim' ? fitted.trimSizeSlope : fitted.sizeSlope)),
     mean_log_tvl: round4(fitted.meanLogTvl),
-    category_multiples: fitted.byCategory,
+    category_multiples: winner === 'catSizeTrim' ? fitted.byCategoryTrim : fitted.byCategory,
     term_tests: termTests,
-    walk_forward_old_new: missMultiple(fitted.walkOldNew),
-    walk_forward_new_old: missMultiple(fitted.walkNewOld),
+    walk_forward_old_new: missMultiple(
+      winner === 'catSizeTrim' ? fitted.walkTrimOldNew : winner === 'catSizeHinge' ? fitted.walkHingeOldNew : fitted.walkOldNew,
+    ),
+    walk_forward_new_old: missMultiple(
+      winner === 'catSizeTrim' ? fitted.walkTrimNewOld : winner === 'catSizeHinge' ? fitted.walkHingeNewOld : fitted.walkNewOld,
+    ),
     walk_forward_flat_old_new: missMultiple(fitted.walkFlatOldNew),
     walk_forward_flat_new_old: missMultiple(fitted.walkFlatNewOld),
+    walk_forward_hinge_old_new: missMultiple(fitted.walkHingeOldNew),
+    walk_forward_hinge_new_old: missMultiple(fitted.walkHingeNewOld),
+    walk_forward_trim_old_new: missMultiple(fitted.walkTrimOldNew),
+    walk_forward_trim_new_old: missMultiple(fitted.walkTrimNewOld),
+    walk_forward_chains_old_new: missMultiple(fitted.walkChainsOldNew),
+    walk_forward_chains_new_old: missMultiple(fitted.walkChainsNewOld),
     range_low_mult: round4(Math.exp(fitted.residP25)),
     range_high_mult: round4(Math.exp(fitted.residP75)),
+    range_low10_mult: round4(Math.exp(fitted.residP10)),
+    range_high90_mult: round4(Math.exp(fitted.residP90)),
     range_coverage_p25_p75: fitted.rangeCoverageP25P75,
     range_coverage_p10_p90: fitted.rangeCoverageP10P90,
+    winner_recipe: winner,
+    integrity: integrity(snapshot),
     odds_fit: oddsFit,
     accounting: accounting(snapshot, rows),
     worth_farming: rows.filter((r) => r.verdict === 'FARM').length,

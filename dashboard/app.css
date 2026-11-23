@@ -1,17 +1,17 @@
-/* Launch Radar dashboard — radar-4. Deep ink, amber signal, one typeface stack. */
+/* ORION Radar dashboard — radar-5. Dark navy, emerald signal, electric cyan accent, one typeface stack. */
 :root {
-  --ink: #0c1220;
-  --panel: #131b2e;
-  --panel-2: #182238;
-  --line: #263252;
-  --text: #e8ecf4;
-  --muted: #9aa7c2;
-  --faint: #6b7894;
-  --amber: #f2b13c;
-  --amber-soft: #f7cf7d;
-  --green: #4cc38a;
+  --ink: #081226;
+  --panel: #0f1f3a;
+  --panel-2: #14294a;
+  --line: #223c66;
+  --text: #e8eefb;
+  --muted: #9db0d2;
+  --faint: #6b7fa8;
+  --amber: #2ee6a8;
+  --amber-soft: #7df0c8;
+  --green: #34d399;
   --red: #f07575;
-  --blue: #6ea8fe;
+  --blue: #22d3ee;
   --radius: 10px;
 }
 * { box-sizing: border-box; }

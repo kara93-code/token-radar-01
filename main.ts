@@ -1,13 +1,13 @@
-// Launch Radar — a token-radar-01 entry (Node 22, standard library only).
+// ORION Radar — a token-radar-01 entry (Node 22, standard library only).
 //
 // Reads the sealed snapshot from /input/snapshot.json (or --input
-// <file|dir>), scores every rankable pre-token protocol with the radar-4
-// model in lib/model.ts — a category median (shrunk toward the global
-// median when the category holds fewer than 5 live protocols) plus a
-// fitted size slope, tested held-out against five dropped terms —
-// multiplies the conditional value by fitted token odds, and writes the
-// ranked board, the dashboard's data, the dashboard itself, its three
-// screenshots and the dossier the judge reads.
+// <file|dir>), scores every rankable pre-token protocol with the radar-5
+// model in lib/model.ts — a 15% trimmed-mean category multiple (shrunk
+// toward the global median when the category holds fewer than 5 live
+// protocols) plus a fitted size slope, tested held-out two ways against
+// seven dropped terms — multiplies the conditional value by fitted token
+// odds, and writes the ranked board, the dashboard's data, the dashboard
+// itself, its three screenshots and the dossier the judge reads.
 //
 //   mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts --input ../input/snapshot.json
 //

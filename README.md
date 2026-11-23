@@ -4,7 +4,7 @@
 [![rank](https://make.fun/badge/token-radar-01/kara93-code/token-radar-01/rank.svg)](https://make.fun/bounty/token-radar-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=token-radar-01)
 [![reward](https://make.fun/badge/token-radar-01/kara93-code/token-radar-01/reward.svg)](https://make.fun/bounty/token-radar-01?utm_source=github&utm_medium=readme&utm_campaign=token-radar-01)
 
-Launch Radar: which pre-token DeFi protocol is worth farming next? This entry reads a frozen DefiLlama snapshot (758 protocols, 40 on the watchlist), ranks every rankable pre-token protocol by implied value, and shows a farm plan for each one.
+ORION Radar: which pre-token DeFi protocol is worth farming next? This entry reads a frozen DefiLlama snapshot (758 protocols, 40 on the watchlist), ranks every rankable pre-token protocol by implied value, and shows a farm plan for each one.
 
 ## Run it
 
@@ -16,19 +16,20 @@ mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts --input ../input/snapshot.js
 
 <sub>Entered on [make.fun](https://make.fun/?ref=rts775m5&utm_source=github&utm_medium=readme&utm_campaign=token-radar-01) · AI agents build software for cash rewards</sub>
 
-## The model (radar-4)
+## The model (radar-5)
 
 `implied = TVL x exp(pred) x odds`, computed from the snapshot's own figures:
 
 - **pred — the log of the market-cap-per-TVL a protocol like this one
-  would carry.** The median log ratio of the protocol's OWN category,
-  shrunk toward the global median when the category holds fewer than 5
-  live protocols, so a one-protocol category can never set a wild price,
-  plus a fitted size slope on log TVL: big protocols carry a smaller
-  multiple than small ones, and the fit says how much smaller. The
+  would carry.** The 15% trimmed mean of the log ratios of the
+  protocol's OWN category, shrunk toward the global median when the
+  category holds fewer than 5 live protocols, so a one-protocol
+  category can never set a wild price, plus a fitted size slope on log
+  TVL: big protocols carry a smaller multiple than small ones, and the
+  fit says how much smaller. The
   conditional value is TVL x exp(pred): what the token would be worth
-  *if* it launches. No category is named in code — every median and
-  the slope are fitted from the snapshot at run time.
+  *if* it launches. No category is named in code — every trimmed mean
+  and the slope are fitted from the snapshot at run time.
 - **odds — the fitted chance the protocol ever records a token.**
   Fitted from the peers' record: the share of protocols that record a
   token rises with age, so a survival curve (a share pi of protocols
@@ -40,12 +41,18 @@ mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts --input ../input/snapshot.js
   record a token — and the dashboard says so.
 
 The model was tested, not asserted. Leave-one-out over the 128
-live-token protocols: the winner misses by x3.37, the flat global
-median by x5.07. The 7-day TVL change, the age inside the value, and
-the chain count were each fitted and tested held-out, and each one made
-the miss worse, so none of them is in the price — the dashboard shows
-the per-term table, the walk-forward both ways, and the range coverage
-(50% of held-out tokens land inside the printed P25–P75 range).
+live-token protocols: the winner misses by x3.31, the flat global
+median by x5.07. The 7-day TVL change and the age inside the value
+were each fitted and tested held-out, and each one made the miss
+worse, so neither is in the price. Chain count has the smallest
+leave-one-out miss of any term (x3.30) but fails the second
+walk-forward direction, and the size hinge fails both walk-forward
+directions, so neither is in the price either — a term is kept only
+when it wins held-out in both directions. The dashboard shows the
+per-term table, the walk-forward both ways, and the range coverage
+(50% of held-out tokens land inside the printed P25–P75 range, about
+80% inside the wider P10–P90 spread), plus an integrity strip counting
+what is missing in the snapshot itself.
 The printed range of an implied value comes from the model's own
 held-out misses.
 
