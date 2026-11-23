@@ -1,9 +1,11 @@
 // Launch Radar — a token-radar-01 entry (Node 22, standard library only).
 //
 // Reads the sealed snapshot from /input/snapshot.json (or --input
-// <file|dir>), scores every rankable pre-token protocol with the model in
-// lib/model.ts, and writes the ranked board, the dashboard's data, the
-// dashboard itself, its three screenshots and the dossier the judge reads.
+// <file|dir>), scores every rankable pre-token protocol with the radar-3
+// model in lib/model.ts — one market multiple per category, a logarithmic
+// age factor, growth and breadth — and writes the ranked board, the
+// dashboard's data, the dashboard itself, its three screenshots and the
+// dossier the judge reads.
 //
 //   mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts --input ../input/snapshot.json
 //
@@ -85,7 +87,12 @@ writeFileSync(
   }),
 );
 
+const topCats = radar.category_multiples
+  .slice(0, 4)
+  .map((c) => `${c.category} ${c.multiple}x (n=${c.n})`)
+  .join(', ');
 process.stdout.write(
-  `launch radar: ${snapshot.protocols.length} protocols, ${snapshot.watchlist.length} on the watchlist, ${board.length} rows ranked (${radar.early_size} early), live multiple ${radar.live_multiple} from ${radar.live_multiple_n} live protocols\n` +
+  `launch radar ${radar.model_version}: ${snapshot.protocols.length} protocols, ${snapshot.watchlist.length} on the watchlist, ${board.length} rows ranked (${radar.early_size} early), global multiple ${radar.live_multiple} from ${radar.live_multiple_n} live protocols\n` +
+    `launch radar: category multiples — ${topCats}\n` +
     `launch radar: wrote ${join(outDir, 'board.json')}, ${join(outDir, 'data.js')}, ${join(outDir, 'dashboard')} (${dashFiles.length} files), ${join(outDir, 'screenshots')} (${shotNames.length} images) and ${join(outDir, 'dossier.json')}\n`,
 );
