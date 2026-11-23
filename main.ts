@@ -1,11 +1,13 @@
 // Launch Radar — a token-radar-01 entry (Node 22, standard library only).
 //
 // Reads the sealed snapshot from /input/snapshot.json (or --input
-// <file|dir>), scores every rankable pre-token protocol with the radar-3
-// model in lib/model.ts — one market multiple per category, a logarithmic
-// age factor, growth and breadth — and writes the ranked board, the
-// dashboard's data, the dashboard itself, its three screenshots and the
-// dossier the judge reads.
+// <file|dir>), scores every rankable pre-token protocol with the radar-4
+// model in lib/model.ts — a category median (shrunk toward the global
+// median when the category holds fewer than 5 live protocols) plus a
+// fitted size slope, tested held-out against five dropped terms —
+// multiplies the conditional value by fitted token odds, and writes the
+// ranked board, the dashboard's data, the dashboard itself, its three
+// screenshots and the dossier the judge reads.
 //
 //   mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts --input ../input/snapshot.json
 //
@@ -15,7 +17,7 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { boardIssue, buildRadar, dataScript, parseSnapshot } from './lib/model.ts';
+import { boardIssue, buildBoard, buildRadar, dataScript, parseSnapshot } from './lib/model.ts';
 import { buildDossier } from './vendor/makefun-board.ts';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
@@ -41,8 +43,9 @@ if (!existsSync(inputFile)) {
 const outDir = flag('output', process.env.MAKEFUN_OUTPUT_DIR ?? '/output');
 
 const snapshot = parseSnapshot(readFileSync(inputFile, 'utf8'));
-const { board, radar } = buildRadar(snapshot);
-const issue = boardIssue(board, snapshot);
+const board = buildBoard(snapshot);
+const radar = buildRadar(snapshot);
+const issue = boardIssue(board, radar);
 if (issue !== null) fail(`the model wrote a board the gate refuses: ${issue}`);
 
 mkdirSync(outDir, { recursive: true });
@@ -91,8 +94,11 @@ const topCats = radar.category_multiples
   .slice(0, 4)
   .map((c) => `${c.category} ${c.multiple}x (n=${c.n})`)
   .join(', ');
+const winner = radar.term_tests.find((t) => t.kept);
+const flat = radar.term_tests.find((t) => t.term === 'flat global median');
 process.stdout.write(
   `launch radar ${radar.model_version}: ${snapshot.protocols.length} protocols, ${snapshot.watchlist.length} on the watchlist, ${board.length} rows ranked (${radar.early_size} early), global multiple ${radar.live_multiple} from ${radar.live_multiple_n} live protocols\n` +
     `launch radar: category multiples — ${topCats}\n` +
+    `launch radar: held-out miss ${winner === undefined ? '?' : winner.loo_miss}x vs flat ${flat === undefined ? '?' : flat.loo_miss}x; odds pi=${radar.odds_fit.pi} lambda=${radar.odds_fit.lambda_per_year}/yr; ${radar.worth_farming} of ${board.length} rows worth farming\n` +
     `launch radar: wrote ${join(outDir, 'board.json')}, ${join(outDir, 'data.js')}, ${join(outDir, 'dashboard')} (${dashFiles.length} files), ${join(outDir, 'screenshots')} (${shotNames.length} images) and ${join(outDir, 'dossier.json')}\n`,
 );

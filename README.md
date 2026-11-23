@@ -16,33 +16,52 @@ mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts --input ../input/snapshot.js
 
 <sub>Entered on [make.fun](https://make.fun/?ref=rts775m5&utm_source=github&utm_medium=readme&utm_campaign=token-radar-01) · AI agents build software for cash rewards</sub>
 
-## The model (radar-3)
+## The model (radar-4)
 
-`implied = TVL x Mcat x G x A x B`, computed from the snapshot's own figures:
+`implied = TVL x exp(pred) x odds`, computed from the snapshot's own figures:
 
-- **Mcat — category multiple.** The median market-cap-per-TVL of the
-  live-token protocols in the protocol's OWN category, measured from
-  this same snapshot. A lending market is not priced like a DEX: the
-  medians run from 0.13x (Lending) to 0.34x (Dexs) to 0.65x (Basis
-  Trading). A category with fewer than 5 live protocols is shrunk
-  toward the global median, so a thin category can never set a wild
-  price; the result is clamped to [0.05, 1.00]. No category is named
-  in code — every median is read off the snapshot at run time.
-- **G — growth factor.** From the 7-day TVL change, clamped to -50% /
-  +100%. Rises are weighted 0.60, falls 0.90 — a drawdown bites harder
-  than a rally lifts — and the factor is clamped to [0.50, 1.60]. No
-  reported change scores 1.00.
-- **A — age factor, logarithmic.** How long the protocol has run with
-  no token on record: 0.50 + 0.50 x ln(1 + age/90) / ln(1 + 1800/90).
-  A log curve still separates a 3-year-old protocol from a 6-month-old
-  one, where a saturating exponential had nearly flattened by 400 days.
-- **B — breadth factor.** 1 + 0.04 per extra chain, up to 5 extra chains.
+- **pred — the log of the market-cap-per-TVL a protocol like this one
+  would carry.** The median log ratio of the protocol's OWN category,
+  shrunk toward the global median when the category holds fewer than 5
+  live protocols, so a one-protocol category can never set a wild price,
+  plus a fitted size slope on log TVL: big protocols carry a smaller
+  multiple than small ones, and the fit says how much smaller. The
+  conditional value is TVL x exp(pred): what the token would be worth
+  *if* it launches. No category is named in code — every median and
+  the slope are fitted from the snapshot at run time.
+- **odds — the fitted chance the protocol ever records a token.**
+  Fitted from the peers' record: the share of protocols that record a
+  token rises with age, so a survival curve (a share pi of protocols
+  ever record one, at a rate lambda a year) is fitted to five age
+  bands by least squares, and the odds are the curve's answer for the
+  protocol's own age. The longer a protocol runs with no token on
+  record, the less likely it ever records one. A protocol with no
+  listing date takes the base rate — the share of all protocols that
+  record a token — and the dashboard says so.
+
+The model was tested, not asserted. Leave-one-out over the 128
+live-token protocols: the winner misses by x3.37, the flat global
+median by x5.07. The 7-day TVL change, the age inside the value, and
+the chain count were each fitted and tested held-out, and each one made
+the miss worse, so none of them is in the price — the dashboard shows
+the per-term table, the walk-forward both ways, and the range coverage
+(50% of held-out tokens land inside the printed P25–P75 range).
+The printed range of an implied value comes from the model's own
+held-out misses.
+
+The verdict is costed on one $1,000 ticket, the same for every row:
+the expected slice is the implied value times the airdrop pool's 5%
+share times the ticket's share of TVL; gas is the plan's own
+transactions on the protocol's chain; time is the plan's own minutes
+at $25 an hour. FARM clears the gas by $5; MARGINAL sits within $5;
+the rest is SKIP.
 
 No protocol name is ever special-cased. Live-token protocols are set
 aside with their market caps — the market's own numbers, never a model's.
 Wrapped, staked and bridged products of tokens that already trade are
 set aside too, as are exchanges and versioned pools: WBTC is Bitcoin on
-Ethereum, not a protocol waiting on a launch of its own.
+Ethereum, not a protocol waiting on a launch of its own. The dashboard
+carries the full accounting: all 758 protocols in exactly one group.
 
 ## Honest language
 
@@ -61,11 +80,14 @@ bytes. Node 22.18+, standard library only, no network.
 
 A static page with no network: search, category and chain filters, a
 watchlist-only toggle, a growing-only toggle, sortable columns, a top-5
-spotlight, a detail view for every protocol (every factor behind its
-number, a why-this-rank sentence, plus its 7-step farm plan with costs
-and times), a table of the multiples by category, and a separate
-live-token view showing the mcap/TVL ratios the multiples are measured
-from.
+spotlight, a detail view for every protocol (conditional value, odds,
+implied value with its range, every factor behind its number, a
+why-this-rank sentence, the costed FARM / MARGINAL / SKIP verdict, plus
+its 7-step farm plan with costs and times), a table of the multiples by
+category, the out-of-sample evidence (held-out tests, walk-forward,
+range coverage), the fitted odds bands, the full accounting ledger, and
+a separate live-token view showing all 128 protocols the multiples are
+measured from.
 
 ## License
 
